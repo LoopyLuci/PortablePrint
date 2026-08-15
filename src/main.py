@@ -193,7 +193,7 @@ class LabelCanvas(tk.Canvas):
 class PrintMasterApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Print Master Replica")
+        self.root.title("PortablePrint")
         self.root.geometry("900x700")
         
         self.style = tb.Style(theme="flatly")
