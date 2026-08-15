@@ -1,17 +1,18 @@
-package com.portableprint
-
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.provider.MediaStore
 import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import com.portableprint.databinding.ActivityMainBinding
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.io.OutputStream
 import java.util.UUID
 
@@ -29,6 +30,12 @@ class MainActivity : AppCompatActivity() {
         if (granted) scanDevices()
     }
 
+    private val pickImageLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) printImage(uri)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -40,6 +47,10 @@ class MainActivity : AppCompatActivity() {
 
         binding.printButton.setOnClickListener {
             printLabel()
+        }
+
+        binding.addImageButton.setOnClickListener {
+            pickImageLauncher.launch("image/*")
         }
     }
 
@@ -93,10 +104,52 @@ class MainActivity : AppCompatActivity() {
                 socket?.connect()
                 val out: OutputStream = socket?.outputStream ?: return@Thread
                 val payload = com.portableprint.shared.PrinterPayloadBuilder.buildText(text)
-                out.write(payload)
+                out.write(payload.toByteArray())
                 out.flush()
                 runOnUiThread {
                     Toast.makeText(this, "Printed", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this, "Print error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                try { socket?.close() } catch (_: Exception) {}
+                socket = null
+            }
+        }.start()
+    }
+
+    private fun printImage(uri: android.net.Uri) {
+        val device = selectedDevice()
+        if (device == null) {
+            Toast.makeText(this, "Select a device first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val channel = binding.channelSpinner.selectedItem.toString().toIntOrNull() ?: 1
+        Thread {
+            try {
+                val bitmap = if (uri.scheme == "content") {
+                    val stream: InputStream? = contentResolver.openInputStream(uri)
+                    val bytes = stream?.readBytes()
+                    stream?.close()
+                    val out = ByteArrayOutputStream()
+                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes?.size ?: 0)
+                } else {
+                    android.graphics.BitmapFactory.decodeFile(uri.path)
+                }
+                if (bitmap == null) {
+                    runOnUiThread { Toast.makeText(this, "Failed to load image", Toast.LENGTH_SHORT).show() }
+                    return@Thread
+                }
+                socket = device.createRfcommSocketToServiceRecord(rfcommUuid)
+                socket?.connect()
+                val out: OutputStream = socket?.outputStream ?: return@Thread
+                val payload = com.portableprint.shared.PrinterPayloadBuilder.buildImage(bitmap)
+                out.write(payload.toByteArray())
+                out.flush()
+                runOnUiThread {
+                    Toast.makeText(this, "Image printed", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 runOnUiThread {
