@@ -1,0 +1,15 @@
+# Core GUI
+# Tkinter is built-in, but we can use ttkbootstrap for better look (optional)
+ttkbootstrap; platform_system=="Windows"
+
+# Bluetooth Low Energy (BLE)
+bleak
+
+# For image handling
+Pillow
+
+# For saving/loading templates
+PyYAML
+
+# For packaging (optional)
+pyinstaller
