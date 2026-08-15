@@ -1,6 +1,9 @@
 import socket
 from PIL import Image, ImageEnhance
 import os
+import platform
+
+from src.printer.backend import create_backend
 
 # ESC/POS constants
 ESC = b"\x1B"
@@ -19,18 +22,15 @@ MAX_CHARS_PER_LINE = 14
 LINE_HEIGHT_BITS = 40
 
 
-def rfcomm_print(bt_address, channel, payload: bytes):
-    """Send raw bytes to a Bluetooth Classic RFCOMM printer."""
-    sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
+def _charset():
     try:
-        sock.connect((bt_address, channel))
-        sock.sendall(payload)
-    finally:
-        sock.close()
+        from phomemo_printer.pixel_sans.charset import charset
+        return charset
+    except Exception:
+        return {"CHAR_NOT_FOUND": b"\x00\x00\x00\x00\x00"}
 
 
 def build_text_print_bytes(text: str) -> bytes:
-    """Build ESC/POS raster bytes for simple text output."""
     newline_separated_text = text.split("\n")
     final_bytes = HEADER
 
@@ -114,20 +114,7 @@ def build_text_print_bytes(text: str) -> bytes:
     return final_bytes
 
 
-def _charset():
-    """Return a simple built-in 5x40 charset mapping used by Phomemo-style printers."""
-    try:
-        from phomemo_printer.pixel_sans.charset import charset
-        return charset
-    except Exception:
-        return {"CHAR_NOT_FOUND": b"\x00\x00\x00\x00\x00"}
-
-
 def build_image_print_bytes(image_path: str, brightness: float | None = None) -> bytes:
-    """
-    Build ESC/POS raster bytes for an image.
-    This matches the Phomemo D30 raster format from phomemo_printer.
-    """
     image = Image.open(image_path)
     if image.width > image.height:
         image = image.transpose(Image.ROTATE_90)
@@ -185,9 +172,19 @@ def build_image_print_bytes(image_path: str, brightness: float | None = None) ->
 
 def print_text(bt_address: str, channel: int, text: str):
     payload = build_text_print_bytes(text)
-    rfcomm_print(bt_address, channel, payload)
+    backend = create_backend()
+    try:
+        backend.connect(bt_address, channel)
+        backend.send(payload)
+    finally:
+        backend.close()
 
 
 def print_image(bt_address: str, channel: int, image_path: str, brightness: float | None = None):
     payload = build_image_print_bytes(image_path, brightness=brightness)
-    rfcomm_print(bt_address, channel, payload)
+    backend = create_backend()
+    try:
+        backend.connect(bt_address, channel)
+        backend.send(payload)
+    finally:
+        backend.close()

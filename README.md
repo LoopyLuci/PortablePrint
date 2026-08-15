@@ -1,32 +1,27 @@
 # PortablePrint
 
-A Windows desktop app for connecting to Bluetooth label makers and designing/printing labels for home organization, kitchen storage, document filing, health reminders, and more.
+Cross-platform Bluetooth label printing.
 
-## Features
+## Repo layout
 
-- **Quick Mode**: Simple text-entry label printing.
-- **Creative Mode**: Drag-and-drop text/images onto a label canvas.
-- **Bluetooth Connectivity**: BLE discovery + RFCOMM printing path.
-- **Label Rendering**: Pillow-based preview and bitmap generation.
-- **Templates**: Save and load label designs as YAML.
-- **Print Queue**: Sequential printing with status feedback.
-- **Packaging**: PyInstaller-built Windows executable.
+- `desktop/` — existing Windows desktop app, plus macOS/Linux variants
+- `android/` — native Android app written in Kotlin
+- `shared/` — common protocol constants and label model used by all clients
 
-## Supported Printers
+## Getting started
 
-Designed for Phomemo-style Bluetooth label printers, including D30, P12, M110 series, and compatible ESC/POS raster devices.
-
-## Getting Started
-
+### Desktop
 ```bash
+cd desktop
 python -m src.main
 ```
 
-Or use the packaged executable in `dist/PortablePrint/`.
+### Android
+Open `android/` in Android Studio and run the `app` module.
 
-## Development
+## Supported printers
 
-Built with Python, tkinter/ttkbootstrap, bleak, and Pillow.
+Phomemo-style Bluetooth label printers and compatible ESC/POS raster devices.
 
 ## License
 

@@ -13,7 +13,6 @@ import uuid
 import math
 
 from src.printer import print_text, print_image
-from collections import deque
 
 
 class LabelCanvas(tk.Canvas):
@@ -66,37 +65,36 @@ class LabelCanvas(tk.Canvas):
             "fill": fill,
         })
         self._attach_handles(item_id)
-        return item_id
     
     def add_image(self, image_path, x=None, y=None, width=None, height=None):
         if x is None:
             x = 10
         if y is None:
             y = 10
-        pil_image = Image.open(image_path)
-        if width is None and height is None:
-            max_w = 200
-            max_h = 200
-            pil_image.thumbnail((max_w, max_h))
-            width, height = pil_image.size
-        else:
-            pil_image = pil_image.resize((int(width), int(height)))
-        
-        photo = ImageTk.PhotoImage(pil_image)
-        item_id = self.create_image(x, y, anchor="nw", image=photo)
-        item_data = {
-            "type": "image",
-            "id": item_id,
-            "path": image_path,
-            "x": x,
-            "y": y,
-            "width": width,
-            "height": height,
-            "photo": photo,
-        }
-        self.items.append(item_data)
-        self._attach_handles(item_id)
-        return item_id
+        try:
+            image = Image.open(image_path)
+            if width is None or height is None:
+                image.thumbnail((200, 200))
+                photo = ImageTk.PhotoImage(image)
+                width = photo.width()
+                height = photo.height()
+            else:
+                image = image.resize((width, height))
+                photo = ImageTk.PhotoImage(image)
+            item_id = self.create_image(x, y, anchor="nw", image=photo)
+            self.items.append({
+                "type": "image",
+                "id": item_id,
+                "path": image_path,
+                "x": x,
+                "y": y,
+                "width": width,
+                "height": height,
+                "photo": photo,
+            })
+            self._attach_handles(item_id)
+        except Exception as e:
+            messagebox.showerror("Image Error", str(e))
     
     def _attach_handles(self, item_id):
         self.addtag_withtag("movable", item_id)
@@ -107,7 +105,6 @@ class LabelCanvas(tk.Canvas):
             self.drag_data["x"] = event.x
             self.drag_data["y"] = event.y
             self.selected_item = self.drag_data["item"]
-            # bring to front
             self.tag_raise(self.selected_item)
         else:
             self.selected_item = None
@@ -162,7 +159,7 @@ class LabelCanvas(tk.Canvas):
             data["text"] = new_text
     
     def _change_color(self, item_id, data):
-        color = tk.colorchooser.askcolor(color=data.get("fill", "black"))[1]
+        color = colorchooser.askcolor(color=data.get("fill", "black"))[1]
         if color:
             self.itemconfig(item_id, fill=color)
             data["fill"] = color
@@ -201,7 +198,7 @@ class PrintMasterApp:
         self.bluetooth_devices = []
         self.selected_device = None
         self.client = None
-        self.print_queue = deque()
+        self.print_queue = []
         self.printing = False
         
         self.main_frame = ttk.Frame(root)
@@ -253,6 +250,14 @@ class PrintMasterApp:
         self.refresh_btn = tb.Button(device_frame, text="Refresh Devices", bootstyle=OUTLINE, command=self.discover_devices)
         self.refresh_btn.pack(side=RIGHT, padx=5, pady=5)
         
+        manual_frame = ttk.Frame(device_frame)
+        manual_frame.pack(fill=X, padx=10, pady=(0, 5))
+        ttk.Label(manual_frame, text="Manual BT Address:").pack(side=LEFT)
+        self.manual_address_var = tk.StringVar()
+        self.manual_address_entry = ttk.Entry(manual_frame, textvariable=self.manual_address_var)
+        self.manual_address_entry.pack(side=LEFT, fill=X, expand=YES, padx=5)
+        self.manual_address_entry.bind("<Return>", lambda e: self.select_manual_address())
+        
         channel_frame = ttk.Frame(device_frame)
         channel_frame.pack(fill=X, padx=10, pady=(0, 5))
         ttk.Label(channel_frame, text="RFCOMM Channel:").pack(side=LEFT)
@@ -268,13 +273,6 @@ class PrintMasterApp:
         tb.Button(top_controls, text="Add Image", bootstyle=OUTLINE, command=self.creative_add_image).pack(side=LEFT, padx=5)
         tb.Button(top_controls, text="Save Template", bootstyle=SECONDARY, command=self.save_template).pack(side=LEFT, padx=5)
         tb.Button(top_controls, text="Load Template", bootstyle=SECONDARY, command=self.load_template).pack(side=LEFT, padx=5)
-        
-        ch_frame = ttk.Frame(top_controls)
-        ch_frame.pack(side=RIGHT, padx=10)
-        ttk.Label(ch_frame, text="RFCOMM Channel:").pack(side=LEFT)
-        self.creative_channel_var = tk.StringVar(value="1")
-        self.creative_channel_combo = ttk.Combobox(ch_frame, textvariable=self.creative_channel_var, state="readonly", width=10, values=["1", "2", "3"])
-        self.creative_channel_combo.pack(side=LEFT, padx=5)
         
         self.canvas_frame = ttk.Frame(self.creative_frame)
         self.canvas_frame.pack(fill=BOTH, expand=YES, padx=10, pady=5)
@@ -357,6 +355,17 @@ class PrintMasterApp:
             self.selected_device = None
             self.status_var.set("Bluetooth: No device selected")
     
+    def select_manual_address(self):
+        address = self.manual_address_var.get().strip()
+        if address:
+            self.selected_device = {
+                "name": "Manual",
+                "address": address,
+                "type": "Manual"
+            }
+            self.device_var.set("")
+            self.status_var.set(f"Bluetooth: Manual address {address}")
+    
     def _selected_channel(self) -> int:
         try:
             return int(self.channel_var.get())
@@ -365,7 +374,7 @@ class PrintMasterApp:
     
     def print_label(self):
         if not self.selected_device:
-            messagebox.showwarning("No Device", "Please select a Bluetooth device first.")
+            messagebox.showwarning("No Device", "Please select or enter a Bluetooth device/address first.")
             return
         
         text = self.text_entry.get()
@@ -375,21 +384,26 @@ class PrintMasterApp:
         
         self.print_queue.append(("text", text, self._selected_channel()))
         self.status_var.set(f"Queued: {text[:20]}...")
+        self._update_queue_ui()
         self._process_queue()
+    
+    def _update_queue_ui(self):
+        try:
+            self.queue_listbox.delete(0, tk.END)
+            for kind, payload, _ in self.print_queue:
+                label = str(payload)
+                if len(label) > 40:
+                    label = label[:37] + "..."
+                self.queue_listbox.insert(tk.END, f"{kind}: {label}")
+        except Exception:
+            pass
     
     def _process_queue(self):
         if self.printing or not self.print_queue or not self.selected_device:
             return
         self.printing = True
-        item = self.print_queue.popleft()
-        kind = item[0]
-        payload = item[1]
-        channel = item[2]
-        temp_path = item[3] if len(item) > 3 else None
-        try:
-            self.queue_listbox.delete(0)
-        except Exception:
-            pass
+        kind, payload, channel = self.print_queue.pop(0)
+        self._update_queue_ui()
         self.status_var.set(f"Printing: {str(payload)[:20]}...")
         
         def worker():
@@ -403,11 +417,6 @@ class PrintMasterApp:
                 self.root.after(0, lambda: messagebox.showerror("Print Error", str(e)))
                 self.root.after(0, lambda: self.status_var.set("Print failed"))
             finally:
-                if temp_path:
-                    try:
-                        os.remove(temp_path)
-                    except OSError:
-                        pass
                 self.printing = False
                 self.root.after(0, self._process_queue)
         
@@ -417,14 +426,11 @@ class PrintMasterApp:
     
     def clear_queue(self):
         self.print_queue.clear()
-        try:
-            self.queue_listbox.delete(0, tk.END)
-        except Exception:
-            pass
+        self._update_queue_ui()
         self.status_var.set("Queue cleared")
     
     def creative_add_text(self):
-        text = tk.simpledialog.askstring("Add Text", "Enter text:", initialvalue="Text")
+        text = simpledialog.askstring("Add Text", "Enter text:", initialvalue="Text")
         if text:
             self.canvas.add_text(text=text)
     
@@ -435,7 +441,7 @@ class PrintMasterApp:
     
     def creative_print(self):
         if not self.selected_device:
-            messagebox.showwarning("No Device", "Please select a Bluetooth device first.")
+            messagebox.showwarning("No Device", "Please select or enter a Bluetooth device/address first.")
             return
         
         if not self.canvas.items:
@@ -443,7 +449,7 @@ class PrintMasterApp:
             return
         
         try:
-            channel = int(self.creative_channel_var.get())
+            channel = int(self.channel_var.get())
         except Exception:
             channel = 1
         
@@ -454,8 +460,9 @@ class PrintMasterApp:
                 image = self.canvas.render_to_image()
                 tmp_path = os.path.join(os.environ.get("TEMP", "."), f"label_render_{uuid.uuid4().hex}.png")
                 image.save(tmp_path)
-                self.print_queue.append(("image", tmp_path, channel, True))
+                self.print_queue.append(("image", tmp_path, channel))
                 self.status_var.set("Queued creative label")
+                self._update_queue_ui()
                 self.root.after(0, self._process_queue)
             except Exception as e:
                 self.root.after(0, lambda: messagebox.showerror("Render Error", str(e)))
@@ -488,7 +495,6 @@ class PrintMasterApp:
         try:
             with open(file_path, "r") as f:
                 data = yaml.safe_load(f)
-            # clear current canvas items
             for item in list(self.canvas.items):
                 self.canvas.delete(item["id"])
             self.canvas.items = []
@@ -514,18 +520,12 @@ class PrintMasterApp:
             self.status_var.set(f"Template loaded: {os.path.basename(file_path)}")
         except Exception as e:
             messagebox.showerror("Load Error", str(e))
-    
-    def _print_payload(self, payload: bytes):
-        if not self.selected_device:
-            messagebox.showwarning("No Device", "Please select a Bluetooth device first.")
-            return
-        messagebox.showinfo("Print", "Label payload ready to send")
 
 
 if __name__ == "__main__":
     import sys
     if "--selftest" in sys.argv:
-        from src.printer import build_text_print_bytes, build_image_print_bytes
+        from src.printer import build_text_print_bytes
         payload = build_text_print_bytes("Hello")
         assert isinstance(payload, bytes) and len(payload) > 0
         print("selftest_ok")
