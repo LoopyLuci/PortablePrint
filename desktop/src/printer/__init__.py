@@ -2,6 +2,7 @@ import socket
 from PIL import Image, ImageEnhance
 import os
 import platform
+from enum import Enum
 
 from src.printer.backend import create_backend
 
@@ -22,6 +23,23 @@ MAX_CHARS_PER_LINE = 14
 LINE_HEIGHT_BITS = 40
 
 
+class PrintDensity(Enum):
+    LIGHT = 0
+    MEDIUM = 1
+    DARK = 2
+
+
+class PrintSpeed(Enum):
+    SLOW = 0
+    NORMAL = 1
+    FAST = 2
+
+
+class LabelMode(Enum):
+    DIE_CUT = 0
+    CONTINUOUS = 1
+
+
 def _charset():
     try:
         from phomemo_printer.pixel_sans.charset import charset
@@ -30,9 +48,23 @@ def _charset():
         return {"CHAR_NOT_FOUND": b"\x00\x00\x00\x00\x00"}
 
 
-def build_text_print_bytes(text: str) -> bytes:
+def _build_print_header(density=PrintDensity.MEDIUM, speed=PrintSpeed.NORMAL, label_mode=LabelMode.DIE_CUT):
+    return (
+        HEADER
+        + ESC + b"\x11\x04" + bytes([density.value])
+        + ESC + b"\x11\x05" + bytes([speed.value])
+        + ESC + b"\x11\x06" + bytes([label_mode.value])
+    )
+
+
+def build_text_print_bytes(
+    text: str,
+    density: PrintDensity = PrintDensity.MEDIUM,
+    speed: PrintSpeed = PrintSpeed.NORMAL,
+    label_mode: LabelMode = LabelMode.DIE_CUT,
+) -> bytes:
     newline_separated_text = text.split("\n")
-    final_bytes = HEADER
+    final_bytes = _build_print_header(density=density, speed=speed, label_mode=label_mode)
 
     for newline_chunk in newline_separated_text:
         words = newline_chunk.split(" ")
@@ -122,7 +154,7 @@ def build_image_print_bytes(image_path: str, brightness: float | None = None) ->
     IMAGE_WIDTH_BYTES = 70
     IMAGE_WIDTH_BITS = IMAGE_WIDTH_BYTES * 8
     image = image.resize(
-        size=(IMAGE_WIDTH_BITS, int(image.height * IMAGE_WIDTH_BITS / image.width))
+        size=(IMAGE_WIDTH_BITS, int(image.height * IMAGE_WIDTH_BYTES / image.width))
     )
 
     if brightness is not None:
@@ -170,8 +202,8 @@ def build_image_print_bytes(image_path: str, brightness: float | None = None) ->
     return final_bytes
 
 
-def print_text(bt_address: str, channel: int, text: str):
-    payload = build_text_print_bytes(text)
+def print_text(bt_address: str, channel: int, text: str, density=PrintDensity.MEDIUM, speed=PrintSpeed.NORMAL, label_mode=LabelMode.DIE_CUT):
+    payload = build_text_print_bytes(text, density=density, speed=speed, label_mode=label_mode)
     backend = create_backend()
     try:
         backend.connect(bt_address, channel)

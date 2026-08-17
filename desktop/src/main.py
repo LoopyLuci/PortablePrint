@@ -11,8 +11,11 @@ import threading
 import time
 import uuid
 import math
+import json
+import datetime
 
 from src.printer import print_text, print_image
+from src.printer import PrintDensity, PrintSpeed, LabelMode
 
 
 class LabelCanvas(tk.Canvas):
@@ -186,6 +189,35 @@ class LabelCanvas(tk.Canvas):
                     pass
         return image
 
+    def render_preview_image(self, text=None, bg="white"):
+        width = int(self.label_width_mm * self.scale)
+        height = int(self.label_height_mm * self.scale)
+        image = Image.new("RGB", (width, height), bg)
+        draw = ImageDraw.Draw(image)
+        
+        if text:
+            try:
+                font = ImageFont.truetype("arial.ttf", 24)
+            except Exception:
+                font = ImageFont.load_default()
+            draw.text((10, 10), text, fill="black", font=font)
+        else:
+            for item in self.items:
+                if item["type"] == "text":
+                    try:
+                        font = ImageFont.truetype(item.get("font_name", "arial.ttf"), item.get("font_size", 24))
+                    except Exception:
+                        font = ImageFont.load_default()
+                    draw.text((item["x"], item["y"]), item.get("text", ""), fill=item.get("fill", "black"), font=font)
+                elif item["type"] == "image":
+                    try:
+                        pil = Image.open(item["path"])
+                        pil = pil.resize((item["width"], item["height"]))
+                        image.paste(pil, (item["x"], item["y"]))
+                    except Exception:
+                        pass
+        return image
+
 
 class PrintMasterApp:
     def __init__(self, root):
@@ -273,6 +305,8 @@ class PrintMasterApp:
         tb.Button(top_controls, text="Add Image", bootstyle=OUTLINE, command=self.creative_add_image).pack(side=LEFT, padx=5)
         tb.Button(top_controls, text="Save Template", bootstyle=SECONDARY, command=self.save_template).pack(side=LEFT, padx=5)
         tb.Button(top_controls, text="Load Template", bootstyle=SECONDARY, command=self.load_template).pack(side=LEFT, padx=5)
+        tb.Button(top_controls, text="Export JSON", bootstyle=OUTLINE, command=self.export_template_json).pack(side=LEFT, padx=5)
+        tb.Button(top_controls, text="Import JSON", bootstyle=OUTLINE, command=self.import_template_json).pack(side=LEFT, padx=5)
         
         self.canvas_frame = ttk.Frame(self.creative_frame)
         self.canvas_frame.pack(fill=BOTH, expand=YES, padx=10, pady=5)
@@ -521,12 +555,62 @@ class PrintMasterApp:
         except Exception as e:
             messagebox.showerror("Load Error", str(e))
 
+    def export_template_json(self):
+        data = {
+            "version": 1,
+            "exported_at": datetime.datetime.now().isoformat(),
+            "width_mm": self.canvas.label_width_mm,
+            "height_mm": self.canvas.label_height_mm,
+            "items": []
+        }
+        for item in self.canvas.items:
+            entry = {k: v for k, v in item.items() if k in ("type", "text", "x", "y", "font_name", "font_size", "fill", "path", "width", "height")}
+            data["items"].append(entry)
+
+        file_path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON", "*.json"), ("All", "*.*")])
+        if file_path:
+            with open(file_path, "w") as f:
+                json.dump(data, f, indent=2)
+            self.status_var.set(f"Exported JSON: {os.path.basename(file_path)}")
+
+    def import_template_json(self):
+        file_path = filedialog.askopenfilename(filetypes=[("JSON", "*.json"), ("All", "*.*")])
+        if not file_path:
+            return
+        try:
+            with open(file_path, "r") as f:
+                data = json.load(f)
+            for item in list(self.canvas.items):
+                self.canvas.delete(item["id"])
+            self.canvas.items = []
+            for item in data.get("items", []):
+                if item["type"] == "text":
+                    self.canvas.add_text(
+                        text=item.get("text", "Text"),
+                        x=item.get("x", 10),
+                        y=item.get("y", 10),
+                        font_name=item.get("font_name", "Arial"),
+                        font_size=item.get("font_size", 24),
+                        fill=item.get("fill", "black"),
+                    )
+                elif item["type"] == "image":
+                    self.canvas.add_image(
+                        item.get("path", ""),
+                        x=item.get("x", 10),
+                        y=item.get("y", 10),
+                        width=item.get("width", 100),
+                        height=item.get("height", 100),
+                    )
+            self.status_var.set(f"Imported JSON: {os.path.basename(file_path)}")
+        except Exception as e:
+            messagebox.showerror("Import Error", str(e))
+
 
 if __name__ == "__main__":
     import sys
     if "--selftest" in sys.argv:
         from src.printer import build_text_print_bytes
-        payload = build_text_print_bytes("Hello")
+        payload = build_text_print_bytes("Hello", density=PrintDensity.MEDIUM, speed=PrintSpeed.NORMAL, label_mode=LabelMode.DIE_CUT)
         assert isinstance(payload, bytes) and len(payload) > 0
         print("selftest_ok")
         sys.exit(0)
