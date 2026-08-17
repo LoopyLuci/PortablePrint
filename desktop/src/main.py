@@ -232,6 +232,8 @@ class PrintMasterApp:
         self.client = None
         self.print_queue = []
         self.printing = False
+        self.recent_screenshots = []
+        self.sync_watcher_path = None
         
         self.main_frame = ttk.Frame(root)
         self.main_frame.pack(fill=BOTH, expand=YES, padx=10, pady=10)
@@ -254,9 +256,15 @@ class PrintMasterApp:
     def create_lite_mode(self):
         preview_frame = ttk.LabelFrame(self.lite_frame, text="Label Preview")
         preview_frame.pack(fill=X, padx=10, pady=5)
-        
+
         self.preview_label = ttk.Label(preview_frame, text="Enter text to see preview", anchor=CENTER)
         self.preview_label.pack(fill=X, padx=10, pady=10)
+
+        thumb_frame = ttk.Frame(self.lite_frame)
+        thumb_frame.pack(fill=X, padx=10, pady=(0, 5))
+        ttk.Label(thumb_frame, text="Recent:").pack(side=LEFT)
+        self.thumbnail_label = ttk.Label(thumb_frame)
+        self.thumbnail_label.pack(side=LEFT, padx=10)
         
         input_frame = ttk.LabelFrame(self.lite_frame, text="Label Text")
         input_frame.pack(fill=X, padx=10, pady=5)
@@ -334,6 +342,7 @@ class PrintMasterApp:
         tb.Button(export_frame, text="Import Template JSON", bootstyle=OUTLINE, command=self.import_template_json).pack(side=LEFT, padx=5)
         tb.Button(export_frame, text="Save Screenshot", bootstyle=OUTLINE, command=self.save_screenshot).pack(side=LEFT, padx=5)
         tb.Button(export_frame, text="Load Sync JSON", bootstyle=OUTLINE, command=self.load_sync_json).pack(side=LEFT, padx=5)
+        tb.Button(export_frame, text="Watch Sync Folder", bootstyle=OUTLINE, command=self.start_sync_watcher).pack(side=LEFT, padx=5)
     
     def update_preview(self, event=None):
         text = self.text_entry.get()
@@ -635,9 +644,55 @@ class PrintMasterApp:
         if file_path:
             try:
                 image.save(file_path)
+                self.recent_screenshots.append(file_path)
+                if len(self.recent_screenshots) > 5:
+                    self.recent_screenshots.pop(0)
+                self.refresh_thumbnail()
                 self.status_var.set(f"Screenshot saved: {os.path.basename(file_path)}")
             except Exception as e:
                 messagebox.showerror("Screenshot Error", str(e))
+
+    def refresh_thumbnail(self):
+        if not self.recent_screenshots:
+            self.thumbnail_label.config(image="")
+            return
+        latest = self.recent_screenshots[-1]
+        try:
+            thumb = Image.open(latest).resize((80, 60))
+            self._last_thumb = ImageTk.PhotoImage(thumb)
+            self.thumbnail_label.config(image=self._last_thumb)
+        except Exception:
+            self.thumbnail_label.config(text="(preview unavailable)")
+
+    def start_sync_watcher(self):
+        from tkinter import filedialog
+        folder = filedialog.askdirectory()
+        if not folder:
+            return
+        self.sync_watcher_path = folder
+        self.status_var.set(f"Sync watcher: {folder}")
+        self._schedule_sync_watch()
+
+    def _schedule_sync_watch(self, delay_ms=5000):
+        if not self.sync_watcher_path:
+            return
+        try:
+            files = [f for f in os.listdir(self.sync_watcher_path) if f.endswith(".json")]
+            if files:
+                latest = max(files, key=lambda f: os.path.getmtime(os.path.join(self.sync_watcher_path, f)))
+                latest_path = os.path.join(self.sync_watcher_path, latest)
+                if getattr(self, "_last_sync_file", None) != latest_path:
+                    self._last_sync_file = latest_path
+                    try:
+                        with open(latest_path, "r") as f:
+                            data = json.load(f)
+                        if isinstance(data, dict) and "templates" in data:
+                            messagebox.showinfo("Sync Detected", f"Loaded {len(data.get('templates', []))} template(s) from {latest}")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        self.root.after(delay_ms, self._schedule_sync_watch)
 
     def load_sync_json(self):
         file_path = filedialog.askopenfilename(filetypes=[("JSON", "*.json"), ("All", "*.*")])
