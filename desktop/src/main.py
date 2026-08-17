@@ -327,6 +327,13 @@ class PrintMasterApp:
         qbtn_frame = ttk.Frame(queue_frame)
         qbtn_frame.pack(fill=X, padx=5, pady=5)
         tb.Button(qbtn_frame, text="Clear", bootstyle=DANGER, command=self.clear_queue).pack(side=RIGHT)
+
+        export_frame = ttk.Frame(self.creative_frame)
+        export_frame.pack(fill=X, padx=10, pady=5)
+        tb.Button(export_frame, text="Export Template JSON", bootstyle=OUTLINE, command=self.export_template_json).pack(side=LEFT, padx=5)
+        tb.Button(export_frame, text="Import Template JSON", bootstyle=OUTLINE, command=self.import_template_json).pack(side=LEFT, padx=5)
+        tb.Button(export_frame, text="Save Screenshot", bootstyle=OUTLINE, command=self.save_screenshot).pack(side=LEFT, padx=5)
+        tb.Button(export_frame, text="Load Sync JSON", bootstyle=OUTLINE, command=self.load_sync_json).pack(side=LEFT, padx=5)
     
     def update_preview(self, event=None):
         text = self.text_entry.get()
@@ -573,6 +580,23 @@ class PrintMasterApp:
                 json.dump(data, f, indent=2)
             self.status_var.set(f"Exported JSON: {os.path.basename(file_path)}")
 
+    def export_sync_json(self):
+        data = {
+            "version": 1,
+            "exported_at": datetime.datetime.now().isoformat(),
+            "deviceId": str(uuid.uuid4()),
+            "templates": []
+        }
+        for item in self.canvas.items:
+            entry = {k: v for k, v in item.items() if k in ("type", "text", "x", "y", "font_name", "font_size", "fill", "path", "width", "height")}
+            data["templates"].append(entry)
+
+        file_path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("Sync JSON", "*.json"), ("All", "*.*")])
+        if file_path:
+            with open(file_path, "w") as f:
+                json.dump(data, f, indent=2)
+            self.status_var.set(f"Exported sync JSON: {os.path.basename(file_path)}")
+
     def import_template_json(self):
         file_path = filedialog.askopenfilename(filetypes=[("JSON", "*.json"), ("All", "*.*")])
         if not file_path:
@@ -604,6 +628,33 @@ class PrintMasterApp:
             self.status_var.set(f"Imported JSON: {os.path.basename(file_path)}")
         except Exception as e:
             messagebox.showerror("Import Error", str(e))
+
+    def save_screenshot(self):
+        image = self.canvas.render_to_image()
+        file_path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("PNG", "*.png"), ("All", "*.*")])
+        if file_path:
+            try:
+                image.save(file_path)
+                self.status_var.set(f"Screenshot saved: {os.path.basename(file_path)}")
+            except Exception as e:
+                messagebox.showerror("Screenshot Error", str(e))
+
+    def load_sync_json(self):
+        file_path = filedialog.askopenfilename(filetypes=[("JSON", "*.json"), ("All", "*.*")])
+        if not file_path:
+            return
+        try:
+            with open(file_path, "r") as f:
+                data = json.load(f)
+            if not isinstance(data, dict) or "templates" not in data:
+                messagebox.showerror("Sync Error", "Invalid sync file")
+                return
+            imported = data.get("templates", [])
+            messagebox.showinfo("Sync", f"Loaded sync file with {len(imported)} template(s)")
+
+
+        except Exception as e:
+            messagebox.showerror("Sync Error", str(e))
 
 
 if __name__ == "__main__":
