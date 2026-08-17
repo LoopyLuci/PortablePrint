@@ -234,6 +234,8 @@ class PrintMasterApp:
         self.printing = False
         self.recent_screenshots = []
         self.sync_watcher_path = None
+        self._last_sync_file = None
+        self._templates_cache = []
         
         self.main_frame = ttk.Frame(root)
         self.main_frame.pack(fill=BOTH, expand=YES, padx=10, pady=10)
@@ -335,6 +337,16 @@ class PrintMasterApp:
         qbtn_frame = ttk.Frame(queue_frame)
         qbtn_frame.pack(fill=X, padx=5, pady=5)
         tb.Button(qbtn_frame, text="Clear", bootstyle=DANGER, command=self.clear_queue).pack(side=RIGHT)
+
+        template_list_frame = ttk.LabelFrame(self.creative_frame, text="Templates")
+        template_list_frame.pack(fill=BOTH, expand=YES, padx=10, pady=5)
+        self.template_listbox = tk.Listbox(template_list_frame, height=6)
+        self.template_listbox.pack(fill=BOTH, expand=YES, padx=5, pady=5)
+        tpl_btns = ttk.Frame(template_list_frame)
+        tpl_btns.pack(fill=X, padx=5, pady=5)
+        tb.Button(tpl_btns, text="Up", bootstyle=OUTLINE, command=self.template_move_up).pack(side=LEFT, padx=5)
+        tb.Button(tpl_btns, text="Down", bootstyle=OUTLINE, command=self.template_move_down).pack(side=LEFT, padx=5)
+        tb.Button(tpl_btns, text="Delete", bootstyle=DANGER, command=self.template_delete_selected).pack(side=LEFT, padx=5)
 
         export_frame = ttk.Frame(self.creative_frame)
         export_frame.pack(fill=X, padx=10, pady=5)
@@ -570,6 +582,41 @@ class PrintMasterApp:
             self.status_var.set(f"Template loaded: {os.path.basename(file_path)}")
         except Exception as e:
             messagebox.showerror("Load Error", str(e))
+
+    def refresh_template_list(self):
+        self.template_listbox.delete(0, tk.END)
+        for idx, tpl in enumerate(self._templates_cache):
+            self.template_listbox.insert(tk.END, f"{idx + 1}. {tpl.get('name', 'Untitled')}")
+
+    def template_move_up(self):
+        sel = self.template_listbox.curselection()
+        if not sel:
+            return
+        i = sel[0]
+        if i <= 0:
+            return
+        self._templates_cache[i - 1], self._templates_cache[i] = self._templates_cache[i], self._templates_cache[i - 1]
+        self.refresh_template_list()
+        self.template_listbox.selection_set(i - 1)
+
+    def template_move_down(self):
+        sel = self.template_listbox.curselection()
+        if not sel:
+            return
+        i = sel[0]
+        if i >= len(self._templates_cache) - 1:
+            return
+        self._templates_cache[i + 1], self._templates_cache[i] = self._templates_cache[i], self._templates_cache[i + 1]
+        self.refresh_template_list()
+        self.template_listbox.selection_set(i + 1)
+
+    def template_delete_selected(self):
+        sel = self.template_listbox.curselection()
+        if not sel:
+            return
+        i = sel[0]
+        del self._templates_cache[i]
+        self.refresh_template_list()
 
     def export_template_json(self):
         data = {
